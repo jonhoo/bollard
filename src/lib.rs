@@ -375,7 +375,6 @@ extern crate failure;
 extern crate serde_derive;
 #[macro_use]
 extern crate log;
-extern crate yup_hyper_mock as hyper_mock;
 
 macro_rules! chain_stream {
     ($self:ident, $invoc:expr) => {{
@@ -383,7 +382,7 @@ macro_rules! chain_stream {
         use futures_util::stream::StreamExt;
         use std::pin::Pin;
 
-        let rest = $invoc;
+        let mut rest = $invoc;
         async move {
             let first = rest.next().await.transpose()?;
             #[allow(trivial_casts)]

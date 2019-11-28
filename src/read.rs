@@ -169,8 +169,10 @@ enum ReadState {
     NotReady,
 }
 
+#[pin_project]
 #[derive(Debug)]
 pub(crate) struct StreamReader<S> {
+    #[pin]
     stream: S,
     state: ReadState,
 }
@@ -192,11 +194,16 @@ impl<S> AsyncRead for StreamReader<S>
 where
     S: Stream<Item = Result<Chunk, Error>>,
 {
-    fn poll_read(self: Pin<&mut Self>, cx: Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let mut this = self.project();
         loop {
             let ret;
 
-            match self.state {
+            match this.state {
                 ReadState::Ready(ref mut chunk, ref mut pos) => {
                     let chunk_start = *pos;
                     let len = cmp::min(buf.len(), chunk.len() - chunk_start);
@@ -208,17 +215,17 @@ where
                     if *pos == chunk.len() {
                         ret = len;
                     } else {
-                        return Ok(len);
+                        return Poll::Ready(Ok(len));
                     }
                 }
 
-                ReadState::NotReady => match self.stream.poll(cx) {
+                ReadState::NotReady => match this.stream.as_mut().poll_next(cx) {
                     Poll::Ready(Some(Ok(chunk))) => {
-                        self.state = ReadState::Ready(chunk, 0);
+                        *this.state = ReadState::Ready(chunk, 0);
 
                         continue;
                     }
-                    Poll::Ready(None) => return Ok(0),
+                    Poll::Ready(None) => return Poll::Ready(Ok(0)),
                     Poll::Pending => {
                         return Poll::Ready(Err(io::ErrorKind::WouldBlock.into()));
                     }
@@ -231,7 +238,7 @@ where
                 },
             }
 
-            self.state = ReadState::NotReady;
+            *this.state = ReadState::NotReady;
 
             return Poll::Ready(Ok(ret));
         }
